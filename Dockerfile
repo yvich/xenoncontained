@@ -2,66 +2,61 @@ FROM debian:buster-slim
 
 ENV XENON_BCORE=j4
 ENV DEBIAN_FRONTEND noninteractive
-RUN apt-get update && apt-get install -y \
-                          gcc \
-                          make \
-                          git \
-                          build-essential \
-                          wget \
-                          lsb-release \
-                          libgmp3-dev \
-                          libmpfr-dev \
-                          libmpc-dev \
-                          git-core \
-                          gettext \
-                          ncurses-dev \
-                          fish \
-                          vim \
-                          sudo \
-                          flex \
-                          bison \
-                          gcc-multilib \
-                          tzdata
+
+# Install dependencies and tools
+RUN apt-get update && \
+    apt-get install -y \
+        gcc \
+        make \
+        git \
+        build-essential \
+        wget \
+        lsb-release \
+        libgmp3-dev \
+        libmpfr-dev \
+        libmpc-dev \
+        git-core \
+        gettext \
+        ncurses-dev \
+        fish \
+        vim \
+        sudo \
+        flex \
+        bison \
+        gcc-multilib \
+        tzdata
+
+# Set the system time zone and remove unnecessary packages
 RUN ln -fs /usr/share/zoneinfo/America/New_York /etc/localtime
 RUN dpkg-reconfigure --frontend noninteractive tzdata                  
 RUN apt-get autoremove
 
-#Build and install toolchain
-RUN mkdir -p /usr/local/xenon
-RUN cd /tmp && git clone https://github.com/unluckybudget/libxenon
-WORKDIR /tmp/libxenon/toolchain 
+# Clone the libxenon repository and change to the toolchain directory
+RUN git clone https://github.com/unluckybudget/libxenon /tmp/libxenon
+WORKDIR /tmp/libxenon/toolchain
+
+# Build and install the Xenon toolchain
 RUN ./build-xenon-toolchain toolchain - set PARALLEL=${XENON_BCORE}
 
-#Add paths to it
+# Set the DEVKITXENON and PATH environment variables
 ENV DEVKITXENON /usr/local/xenon
 ENV PATH $DEVKITXENON/bin:$DEVKITXENON/usr/bin:$PATH
 
-#Build and install libxenon
+# Build and install the libxenon library and other libraries
 RUN ./build-xenon-toolchain libxenon - set PARALLEL=${XENON_BCORE}
-
-#Build and install libraries
 RUN ./build-xenon-toolchain libs - set PARALLEL=${XENON_BCORE}
 
-#Set access for folder and user
-RUN mkdir /mnt/share && chmod 757 -R /mnt/share
-RUN adduser --home /mnt/share libxenon --shell /bin/bash
-RUN echo 'unset HISTFILE' >> /etc/profile.d/disable.history.sh
+# Create the libxenon user and set its password
+RUN adduser --home /mnt/share libxenon --shell /bin/bash && \
+    printf "xenon\nxenon" | passwd libxenon
 
-#Setup enviroment variables
-RUN echo "#!/bin/bash" >> /etc/profile.d/libxenon.sh
-RUN echo "export DEVKITXENON=/usr/local/xenon" >> /etc/profile.d/libxenon.sh
-RUN echo "export PATH=$DEVKITXENON/bin:$DEVKITXENON/usr/bin:$PATH" >> /etc/profile.d/libxenon.sh
-RUN usermod -aG sudo libxenon
-RUN printf "xenon\nxenon" | passwd libxenon
+# Copy the libxenon.sh and disable.history.sh scripts to the container
+COPY libxenon.sh /etc/profile.d/libxenon.sh
+COPY disable.history.sh /etc/profile.d/disable.history.sh
 
-#Also add them to /etc/enviroment, just in case
-RUN echo "DEVKITXENON=/usr/local/xenon" > /etc/enviroment
-RUN echo "PATH=$DEVKITXENON/bin:$DEVKITXENON/usr/bin:$PATH" >> /etc/enviroment
-
+# Set the default working directory and switch to the libxenon user
 WORKDIR /mnt/share
-RUN rm -rf /tmp/libxenon && \
-    rm -rf /var/lib/apt/lists/* && \
-    apt autoremove -y
+USER libxenon
 
-CMD ["/bin/bash"]
-
+# Set the default command
+ENTRYPOINT ["/bin/bash"]
